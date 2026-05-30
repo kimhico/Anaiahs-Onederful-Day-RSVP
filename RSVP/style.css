@@ -1,0 +1,28 @@
+body{
+
+background-image: white;
+background-size: cover;
+background-position: center;
+background-repeat: no-repeat;
+
+display:flex;
+justify-content:center;
+align-items:center;
+
+height:100vh;
+
+font-family:Georgia;
+
+}
+
+.card{
+
+width:500px;
+
+padding:30px;
+
+border-radius:20px;
+
+background:white;
+
+}
