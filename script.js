@@ -48,6 +48,7 @@ async function searchName() {
         value="${m.name}"
         data-seats="${m.seats || ''}"
         data-companions="${m.companions || ''}"
+        data-role="${m.role || ''}"
       >
       ${m.name}
     </label>
@@ -69,8 +70,9 @@ function renderResults(data) {
           type="radio"
           name="guest"
           value="${m.name}"
-          data-seats="${m.seats}"
-          data-companions="${m.companions}"
+          data-seats="${m.seats || ''}"
+          data-companions="${m.companions || ''}"
+          data-role="${m.role || ''}"
         >
         ${m.name}
       </label>
@@ -90,7 +92,6 @@ function renderResults(data) {
   document.getElementById("screen").innerHTML = html;
 }
 
-// REPLACE THIS FUNCTION IN YOUR SCRIPT.JS
 function confirmName() {
   let radio = document.querySelector('input[name="guest"]:checked');
 
@@ -103,7 +104,8 @@ function confirmName() {
   let selected = {
     name: radio.value,
     seats: parseInt(radio.getAttribute("data-seats")) || 1,
-    companions: radio.getAttribute("data-companions") || ""
+    companions: radio.getAttribute("data-companions") || "",
+    role: radio.getAttribute("data-role") || "" // <-- Pulls role from database row
   };
 
   window.currentGuest = selected;
@@ -113,14 +115,12 @@ function confirmName() {
     .map(x => x.trim())
     .filter(x => x.length > 0);
 
-  // Automatically save the existing companions to our background state
   window.tempCompanions = companions;
 
   // CONDITION CHECK: If they have multiple seats, let them edit companions right away
   if (selected.seats > 1) {
-    editCompanions(); // Takes them directly to the input box to edit/confirm companion names
+    editCompanions(); 
   } else {
-    // If they only have 1 seat, skip everything and go straight to attendance
     window.currentGuest.companions = "";
     window.tempCompanions = [];
     showAttendanceQuestion();
@@ -400,10 +400,13 @@ function showAttendanceQuestion() {
 async function finalAttendance(answer) {
   try {
     let guest = window.currentGuest;
+    
+    // Save the attendance selection globally
+    window.currentGuest.status = answer; 
 
-    // 2. Trigger loading screen instantly when they choose Yes or No
     showLoading("Saving your RSVP...");
 
+    // 1. Save standard attendance response (YES or NO) to Columns C, D, E, F
     let res = await fetch(
       "https://script.google.com/macros/s/AKfycbyIvNFICoN16ta_nxYkCfiWsBHuzZgd8v9emDRmp88TqQXadM9d0_ZpZIQRmzkof6dKMQ/exec",
       {
@@ -412,44 +415,22 @@ async function finalAttendance(answer) {
           name: guest.name,
           seats: guest.seats,
           companions: guest.companions,
-          status: answer
+          status: answer 
         })
       }
     );
 
     await res.text();
 
-    if (answer === "YES") {
-      // Elegant, warm layout for attending guests
-      document.getElementById("screen").innerHTML = `
-        <h2 style="font-size: 26px; color: #5d534a; margin-bottom: 10px;">Thank You!</h2>
-        <p style="font-size: 16px; color: #4a4a4a; font-weight: 500; margin-bottom: 20px;">
-          Your RSVP has been confirmed.
-        </p>
-        
-        <div style="background: rgba(255, 255, 255, 0.4); border-radius: 16px; padding: 20px; border: 1px dashed rgba(0, 0, 0, 0.08); margin-top: 15px;">
-          <p style="color: #6b6b6b; font-size: 14px; line-height: 1.6; margin: 0;">
-            We can't wait to celebrate <br>
-            <span style="font-weight: 600; color: #5d534a; font-size: 15px;">Anaiah's 1st Birthday</span> with you!
-          </p>
-        </div>
-      `;
-
+    // 2. CHECKPOINT: Check if the guest has a special role
+    let cleanRole = guest.role ? guest.role.trim() : "";
+    
+    if (cleanRole === "Ninong" || cleanRole === "Ninang") {
+      // Special roles ALWAYS transition to the role question screen next
+      showRoleQuestion(cleanRole); 
     } else {
-      // Thoughtful, sweet layout for guests who can't make it
-      document.getElementById("screen").innerHTML = `
-        <h2 style="font-size: 24px; color: #5d534a; margin-bottom: 10px;">Thank You</h2>
-        <p style="font-size: 15px; color: #4a4a4a; font-weight: 500; margin-bottom: 20px;">
-          Your response has been saved.
-        </p>
-        
-        <div style="background: rgba(255, 255, 255, 0.4); border-radius: 16px; padding: 20px; border: 1px dashed rgba(0, 0, 0, 0.08); margin-top: 15px;">
-          <p style="color: #6b6b6b; font-size: 14px; line-height: 1.6; margin: 0;">
-            You will be missed! Thank you for sending your warm wishes for 
-            <span style="font-weight: 600; color: #5d534a;">Anaiah</span>.
-          </p>
-        </div>
-      `;
+      // Regular guests skip the role screen and go straight to their ending screen
+      showSuccessScreen("REGULAR_GUEST");
     }
 
   } catch (err) {
@@ -494,6 +475,126 @@ function showLoading(message = "Loading...") {
     <div class="loader-container">
       <div class="loading-spinner"></div>
       <p>${message}</p>
+    </div>
+  `;
+}
+
+function showRoleQuestion(role) {
+  let html = `
+    <div class="screen-content">
+      <h2>A Special Milestone...</h2>
+      <p style="font-size: 15px; color: #4a4a4a; font-weight: 500; margin-bottom: 25px; line-height: 1.6; padding: 0 10px;">
+        Do you accept the beloved role of being Anaiah's <b>${role}</b>?
+      </p>
+
+      <button onclick="saveRoleResponse('Yes, I Accept')">
+        Yes, I Accept
+      </button>
+
+      <button onclick="saveRoleResponse('Sorry, I Do Not Accept')">
+        Sorry, I Do Not Accept
+      </button>
+    </div>
+  `;
+  document.getElementById("screen").innerHTML = html;
+}
+
+async function saveRoleResponse(roleAnswer) {
+  try {
+    showLoading("Recording your response...");
+
+    // Send the response targeting your separate role response column (Column G)
+    await fetch(
+      "https://script.google.com/macros/s/AKfycbyIvNFICoN16ta_nxYkCfiWsBHuzZgd8v9emDRmp88TqQXadM9d0_ZpZIQRmzkof6dKMQ/exec",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: window.currentGuest.name,
+          roleConfirmation: roleAnswer 
+        })
+      }
+    );
+
+    // Pass the choice down to the dynamic screen generator
+    showSuccessScreen(roleAnswer);
+
+  } catch (err) {
+    console.error(err);
+    showSuccessScreen(roleAnswer);
+  }
+}
+
+function showSuccessScreen(roleAnswer) {
+  let messageContent = "";
+  const rsvpStatus = window.currentGuest.status; // "YES" or "NO"
+
+  // ==========================================
+  // PATH A: THE GUEST IS ATTENDING (RSVP = YES)
+  // ==========================================
+  if (rsvpStatus === "YES") {
+    if (roleAnswer === "Yes, I Accept") {
+      messageContent = `
+        We are overjoyed that you accepted the role! We can't wait to celebrate <br>
+        <span style="font-weight: 600; color: #5d534a; font-size: 15px;">Anaiah's 1st Birthday</span> with you!
+      `;
+    } else if (roleAnswer === "Sorry, I Do Not Accept") {
+      messageContent = `
+        We completely understand! We are still incredibly excited to have you join us and celebrate
+        <span style="font-weight: 600; color: #5d534a; font-size: 15px;">Anaiah's 1st Birthday</span>!
+      `;
+    } else {
+      // Regular guest who is attending
+      messageContent = `
+        Your RSVP has been confirmed. We can't wait to celebrate <br>
+        <span style="font-weight: 600; color: #5d534a; font-size: 15px;">Anaiah's 1st Birthday</span> with you!
+      `;
+    }
+  } 
+  // ==========================================
+  // PATH B: THE GUEST CANNOT ATTEND (RSVP = NO)
+  // ==========================================
+  else if (rsvpStatus === "NO") {
+    if (roleAnswer === "Yes, I Accept") {
+      messageContent = `
+        We are deeply honored and overjoyed that you have accepted to be Anaiah's Godparent! 
+        Even though you can't join us physically at the party, your love, guidance, and blessings mean the world to us.
+      `;
+    } else {
+      // Regular guest who declined OR a Ninong/Ninang who declined the role and isn't coming
+      messageContent = `
+        Thank you for letting us know! Your warm wishes for <span style="font-weight: 600; color: #5d534a;">Anaiah</span> are deeply appreciated. You will be missed!
+      `;
+    }
+  }
+
+  // Render the finalized layout markup inside the target card frame container
+  document.getElementById("screen").innerHTML = `
+    <h2 style="font-size: 26px; color: #5d534a; margin-bottom: 10px;">Thank You!</h2>
+    <p style="font-size: 16px; color: #4a4a4a; font-weight: 500; margin-bottom: 20px;">
+      Response Saved.
+    </p>
+    
+    <div style="background: rgba(255, 255, 255, 0.4); border-radius: 16px; padding: 20px; border: 1px dashed rgba(0, 0, 0, 0.08); margin-top: 15px;">
+      <p style="color: #6b6b6b; font-size: 14px; line-height: 1.6; margin: 0;">
+        ${messageContent}
+      </p>
+    </div>
+  `;
+}
+
+// Clean helper layout for regular guests who say "No" to the invite outright
+function showNoAttendanceScreen() {
+  document.getElementById("screen").innerHTML = `
+    <h2 style="font-size: 24px; color: #ea6f03; margin-bottom: 10px;">Thank You</h2>
+    <p style="font-size: 15px; color: #4a4a4a; font-weight: 500; margin-bottom: 20px;">
+      Your response has been saved.
+    </p>
+    
+    <div style="background: rgba(255, 255, 255, 0.4); border-radius: 16px; padding: 20px; border: 1px dashed rgba(0, 0, 0, 0.08); margin-top: 15px;">
+      <p style="color: #6b6b6b; font-size: 14px; line-height: 1.6; margin: 0;">
+        You will be missed! Thank you for sending your warm wishes for 
+        <span style="font-weight: 600; color: #e02baa;">Anaiah Ezrielle</span>.
+      </p>
     </div>
   `;
 }
